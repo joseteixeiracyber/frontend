@@ -1,0 +1,234 @@
+/* ================================================================= */
+/* 0. RESET E VARIÁVEIS */
+/* ================================================================= */
+
+body {
+    margin: 0; /* REMOVIDO: margens padrão do body */
+    padding: 0; /* REMOVIDO: padding padrão do body */
+    min-height: 100vh;
+}
+
+:root {
+  --bg: #0a0f18;
+  --panel: rgba(255,255,255,0.04);
+  --accent: #00ffd5;
+  --accent-2: #ff7aa2;
+  --muted: rgba(255,255,255,0.6);
+}
+
+[data-theme="light"] {
+  --bg: #f5f7fb;
+  --panel: rgba(0,0,0,0.05);
+  --accent: #007a78;
+  --accent-2: #b20f3b;
+  --muted: rgba(0,0,0,0.7);
+  color: #111;
+}
+
+* { 
+  box-sizing: border-box; 
+  font-family: Inter, system-ui, Arial, sans-serif; 
+}
+
+.dashboard-root {
+  background: radial-gradient(circle at top left, rgba(0,0,0,0.25), transparent), var(--bg);
+  color: white;
+}
+
+/* * -----------------------------------------------------------
+ * 1. SIDEBAR (FIXO, COLADO E COM ALTURA 100%)
+ * -----------------------------------------------------------
+ */
+
+.sidebar {
+  /* FIXO NA TELA */
+  position: fixed;
+  top: 0; /* Cola no topo */
+  left: 0; /* Cola na lateral */
+  height: 100vh; /* Ocupa 100% da altura da tela */
+  z-index: 1010; 
+  
+  width: 240px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-right: 1px solid rgba(255,255,255,0.03);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  transition: width .25s ease;
+  overflow-y: auto; 
+}
+.sidebar.collapsed { width: 84px; }
+
+/* Branding */
+.brand { display:flex; align-items:center; gap:12px; }
+.logo {
+  width:48px;height:48px;border-radius:10px;
+  background: linear-gradient(135deg,var(--accent),#00b3ff);
+  display:flex;align-items:center;justify-content:center;color:#021;
+  font-weight:800;
+}
+.brand-text { font-weight:700; color:var(--accent); }
+.collapse-btn {
+  margin-left:auto; background:transparent;border:none;color:var(--muted);cursor:pointer;
+}
+
+/* Nav */
+.nav { display:flex;flex-direction:column; gap:8px; }
+.nav-item {
+  display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;cursor:pointer;
+  color:var(--muted);
+}
+.nav-item.active { 
+  background:rgba(255,255,255,0.03); 
+  color:var(--accent); 
+  box-shadow: 0 6px 18px rgba(0,0,0,0.3); 
+}
+.nav-icon { 
+  width:36px; height:36px; border-radius:8px; 
+  display:flex; align-items:center; justify-content:center; 
+  background: rgba(255,255,255,0.02); 
+}
+
+
+/* * -----------------------------------------------------------
+ * 2. MAIN CONTENT & TOPBAR (COMPENSAÇÃO DO FIXO)
+ * -----------------------------------------------------------
+ */
+
+/* Container Principal do Conteúdo */
+.main { 
+  /* COMPENSA O SIDEBAR FIXO: Empurra o conteúdo para a direita */
+  margin-left: 240px; 
+  /* CRÍTICO: Garante que a largura não exceda a tela (Elimina scroll lateral) */
+  width: calc(100% - 240px); 
+  
+  flex: 1; 
+  display:flex; 
+  flex-direction:column; 
+  transition: margin-left .25s ease, width .25s ease; 
+  min-height: 100vh; /* Garante que o fundo cubra toda a tela */
+}
+
+/* Topbar (FIXO) */
+.topbar { 
+  /* FIXO NO TOPO */
+  position: fixed;
+  top: 0;
+  left: 240px; /* Começa à direita do Sidebar */
+  /* CRÍTICO: Ocupa a largura restante (Elimina scroll lateral) */
+  width: calc(100% - 240px); 
+  z-index: 1000;
+  
+  height: 72px; 
+  display:flex; 
+  align-items:center; 
+  justify-content:space-between; 
+  padding: 0 28px; 
+  border-bottom: 1px solid rgba(255,255,255,0.02); 
+  background: var(--bg); 
+  transition: left .25s ease, width .25s ease;
+}
+
+/* Conteúdo */
+.content { 
+  /* Aumentando para 92px (72px do Topbar + 20px de respiro) */
+  padding-top: 92px; 
+  padding-left: 28px;
+  padding-right: 28px; 
+  padding-bottom: 28px;
+}
+
+/* ----------------------------------------------------------- */
+/* 3. EFEITO COLAPSO (Ajuste para o estado colapsado) */
+/* ----------------------------------------------------------- */
+
+/* Assumindo que você aplique a classe 'sidebar-is-collapsed' ao container pai (.dashboard-root) */
+.dashboard-root.sidebar-is-collapsed .main {
+  margin-left: 84px; 
+  width: calc(100% - 84px); 
+}
+.dashboard-root.sidebar-is-collapsed .topbar {
+  left: 84px;
+  width: calc(100% - 84px);
+}
+
+
+/* * -----------------------------------------------------------
+ * 4. ESTILOS DO CONTEÚDO (Sem alterações de layout aqui)
+ * -----------------------------------------------------------
+ */
+
+.top-title { margin:0; color:var(--muted); }
+.theme-btn { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; background:transparent; color:var(--muted); }
+
+/* KPI */
+.kpi-row { display:grid; grid-template-columns: repeat(4, 1fr); gap:18px; margin-bottom:18px; }
+.card { background: var(--panel); padding:16px; border-radius:12px; border: 1px solid rgba(255,255,255,0.03); }
+.kpi { display:flex; flex-direction:column; gap:8px; }
+.kpi-title { color:var(--muted); font-size:13px; }
+.kpi-value { font-size:20px; font-weight:700; color:var(--accent); }
+.kpi-sub{font-size:12px;color:var(--muted)}
+.kpi-diff.up { color:#6ef5a0; } .kpi-diff.down { color:#ff8aa3; }
+
+/* Charts layout */
+.charts-row { display:grid; grid-template-columns: 2fr 1fr; gap:18px; align-items:start; }
+.big-chart{padding:16px}
+.right-column{display:flex;flex-direction:column;gap:12px}
+
+/* tx list */
+.small-card .tx-list { list-style:none;padding:0;margin:0; display:flex; flex-direction:column; gap:10px; }
+.tx-list li { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px dashed rgba(255,255,255,0.03); }
+.muted{color:var(--muted)}.small{font-size:12px}
+
+/* table and tx */
+.filter-row{display:flex;gap:8px;margin-bottom:10px}
+.filter-row input, .filter-row select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.2);color:white}
+.tx-table table{width:100%;border-collapse:collapse}.tx-table th{font-size:12px;text-align:left;padding:8px;color:var(--muted)}.tx-table td{padding:10px;border-top:1px solid rgba(255,255,255,0.02)}
+.credit{color:#4ee0a8}.debit{color:#ff7aa2}
+
+/* mid row layout */
+.mid-row{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-top:18px}
+.left-col{min-width:0}.right-col{display:flex;flex-direction:column;gap:12px}
+
+/* budget */
+.budget-row{margin-bottom:12px}.budget-head{display:flex;justify-content:space-between}.budget-bar{height:8px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden;margin-top:6px}.budget-progress{height:100%;border-radius:8px}
+
+/* assets */
+.alloc-list{margin-top:12px}.alloc-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+
+/* * -----------------------------------------------------------
+ * 5. RESPONSIVIDADE (Ajustado)
+ * -----------------------------------------------------------
+ */
+
+@media (max-width: 980px) {
+  /* No mobile, o sidebar é ocultado */
+  .sidebar { 
+    display: none; 
+    position: relative; 
+    width: 0 !important;
+  }
+  
+  /* O main content volta a ocupar 100% da tela */
+  .main {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  /* O Topbar deve ocupar 100% da tela */
+  .topbar {
+    left: 0;
+    width: 100%;
+  }
+
+  /* Layouts de colunas mudam para 1 coluna */
+  .kpi-row { grid-template-columns: repeat(2,1fr); }
+  .charts-row { grid-template-columns: 1fr; } 
+  .mid-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 500px) {
+  /* Em telas menores que 500px, as KPIs ficam em uma única coluna */
+  .kpi-row { grid-template-columns: 1fr; }
+}
