@@ -2,7 +2,7 @@ import axios from "axios";
 
 // Instância base do Axios configurada com baseURL e Interceptors
 const api = axios.create({
-    baseURL: "http://localhost:3001",
+    baseURL: "http://ia_back-end_panel_finance:80/",
 });
 
 // ===============================
