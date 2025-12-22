@@ -15,7 +15,7 @@ export default function Login() {
         setError("");
 
         try {
-            const response = await fetch("https://ia-back-end-panel-finance.suxnnp.easypanel.host/auth/login", {
+            const response = await fetch("https://ia-back-end-panel-finance.suxnnp.easypanel.host:3001/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
