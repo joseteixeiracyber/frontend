@@ -15,7 +15,7 @@ export default function Login() {
         setError("");
 
         try {
-            const response = await fetch("https://apinoples.jtmoney.cloud/auth/login", {
+            const response = await fetch("http://apinoples.jtmoney.cloud:3001/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
