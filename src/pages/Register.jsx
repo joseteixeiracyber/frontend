@@ -19,7 +19,7 @@ export default function Register() {
         setSuccess("");
 
         try {
-            const response = await fetch("http://localhost:3000/auth/register", {
+            const response = await fetch("https://ia-back-end-panel-finance.suxnnp.easypanel.host/auth/register", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, email, password, confirmpassword }),
