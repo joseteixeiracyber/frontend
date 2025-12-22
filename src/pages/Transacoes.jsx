@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { FiPlus, FiX } from "react-icons/fi"; 
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
-import "../styles/transacoes.css"; 
+import "../styles/Transacoes.css"; 
 import {
   ReceitaForm,
   DespesaForm,
