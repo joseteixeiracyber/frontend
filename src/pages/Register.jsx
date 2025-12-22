@@ -19,7 +19,7 @@ export default function Register() {
         setSuccess("");
 
         try {
-            const response = await fetch("https://apinoples.jtmoney.cloud/auth/register", {
+            const response = await fetch("http://apinoples.jtmoney.cloud:3001/auth/register", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ name, email, password, confirmpassword }),
