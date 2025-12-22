@@ -1,0 +1,17 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mery_frontend
+    ports:
+      - "80:80"
+    environment:
+      - VITE_API_URL=https://ia-back-end-panel-finance.suxnnp.easypanel.host/ # URL do seu backend no EasyPanel
+    networks:
+      - mery_network
+    restart: always
+
+networks:
+  mery_network:
+    driver: bridge
