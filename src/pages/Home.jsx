@@ -4,11 +4,8 @@ import Topbar from "../components/Topbar";
 import KPIRow from "../components/KPIRow";
 import TransactionsTable from "../components/TransactionsTable";
 import UpcomingPayments from "../components/UpcomingPayments";
-import BudgetProgress from "../components/BudgetProgress";
-import AssetAllocation from "../components/AssetAllocation";
-import DebtsList from "../components/DebtsList";
 import DonutChart from "../components/DonutChart";
-import api, { ReceitaService, DespesaService } from "../services/api"; 
+import api from "../services/api"; 
 import "../styles/Dashboard.css";
 import moment from "moment";
 
@@ -26,53 +23,57 @@ export default function Home() {
 
   const loadDashboardData = useCallback(async () => {
     const userId = localStorage.getItem("userId");
-    if (!userId) {
+    const token = localStorage.getItem("token");
+
+    if (!userId || !token) {
       window.location.href = "/login";
       return;
     }
 
     setLoading(true);
     try {
-      // 1. Busca dados usando os serviços que você já validou
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+
+      // Busca dados diretamente das suas rotas configuradas
       const [resReceitas, resDespesas] = await Promise.all([
-        api.get(`/receitas/${userId}`),
-        api.get(`/despesas/${userId}`)
+        api.get(`/receitas/${userId}`, config),
+        api.get(`/despesas/${userId}`, config)
       ]);
 
       const receitasRaw = resReceitas.data || [];
       const despesasRaw = resDespesas.data || [];
 
-      // 2. Normalização (Crucial para evitar R$ NaN e campos vazios)
+      // --- NORMALIZAÇÃO PARA A TRANSACTIONS TABLE ---
+      // Aqui garantimos que os nomes das propriedades batam com o que o componente lê
+      
       const receitasNormalizadas = receitasRaw.map(r => ({
         id: r.id || r._id,
         data: r.data,
-        // Alinhado com seu backend: Receitas usam 'fonte'
-        description: r.fonte || r.descricao || "Receita",
-        category: r.tipo || "Entrada",
-        // Converte para número garantindo que não seja NaN
-        amount: parseFloat(r.valor) || 0,
+        descricao: r.fonte || r.descricao || "Receita", // Mapeia 'fonte' para 'descricao'
+        categoria: r.tipo || "Entrada",
+        valor: parseFloat(r.valor) || 0, // Garante que seja número para evitar NaN
         type: 'credit'
       }));
 
       const despesasNormalizadas = despesasRaw.map(d => ({
         id: d.id || d._id,
         data: d.data,
-        // Alinhado com seu backend: Despesas usam 'categoria' ou 'fonte'
-        description: d.descricao || d.tipo || "Despesa",
-        category: d.categoria || "Saída",
-        amount: parseFloat(d.valor) || 0,
+        descricao: d.descricao || d.fonte || "Despesa",
+        categoria: d.categoria || d.tipo || "Saída",
+        valor: parseFloat(d.valor) || 0,
         type: 'debit'
       }));
 
-      // 3. Unificar para o Extrato Analítico
-      const mixedTransactions = [...receitasNormalizadas, ...despesasNormalizadas]
-        .sort((a, b) => new Date(b.data) - new Date(a.data));
+      // Unificar e ordenar por data decrescente
+      const allTransactions = [...receitasNormalizadas, ...despesasNormalizadas].sort(
+        (a, b) => new Date(b.data) - new Date(a.data)
+      );
 
-      setTransactions(mixedTransactions);
+      setTransactions(allTransactions);
 
-      // 4. Totais para os Cards (KPIs)
-      const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.amount, 0);
-      const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.amount, 0);
+      // --- CÁLCULO DO RESUMO ---
+      const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.valor, 0);
+      const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.valor, 0);
       
       setMonthlySummary({ revenue: totalRev, expense: totalExp });
 
@@ -112,6 +113,7 @@ export default function Home() {
             <div className="left-column">
               <UpcomingPayments transactions={transactions} /> 
               <div className="spacer" style={{ height: '20px' }} />
+              {/* Agora passa a lista normalizada e corrigida */}
               <TransactionsTable transactions={transactions} />
             </div>
             <div className="right-column">
