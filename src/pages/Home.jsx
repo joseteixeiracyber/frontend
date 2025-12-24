@@ -1,18 +1,23 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import KPIRow from "../components/KPIRow";
 import TransactionsTable from "../components/TransactionsTable";
 import UpcomingPayments from "../components/UpcomingPayments";
+import BudgetProgress from "../components/BudgetProgress";
+import AssetAllocation from "../components/AssetAllocation";
+import DebtsList from "../components/DebtsList";
 import DonutChart from "../components/DonutChart";
 import api from "../services/api"; 
 import "../styles/Dashboard.css";
-import moment from "moment";
 
 export default function Home() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState([]); 
+  const [investments, setInvestments] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthlySummary, setMonthlySummary] = useState({ revenue: 0, expense: 0 });
 
@@ -21,79 +26,90 @@ export default function Home() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  const loadDashboardData = useCallback(async () => {
-    const userId = localStorage.getItem("userId");
-    const token = localStorage.getItem("token");
+  useEffect(() => {
+    let mounted = true;
 
-    if (!userId || !token) {
-      window.location.href = "/login";
-      return;
+    async function loadAll() {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      const userId = localStorage.getItem("userId");
+
+      if (!token || !userId) {
+        window.location.href = "/login";
+        return;
+      }
+
+      try {
+        const config = { headers: { Authorization: `Bearer ${token}` } };
+
+        const [resReceitas, resDespesas, resInvest, resCards, resCats] = await Promise.allSettled([
+          api.get(`/receitas/${userId}`, config),
+          api.get(`/despesas/${userId}`, config),
+          api.get(`/investimentos/${userId}`, config), 
+          api.get(`/cartoes/${userId}`, config),
+          api.get(`/categorias/${userId}`, config),
+        ]);
+
+        if (!mounted) return;
+
+        // 1. Normalização das Receitas (type: credit)
+        const receitasRaw = resReceitas.status === "fulfilled" ? resReceitas.value.data : [];
+        const receitasNormalizadas = receitasRaw.map(r => ({
+          ...r,
+          type: 'credit',
+          category: r.tipo || 'Receita',
+          description: r.fonte || r.descricao || 'Entrada'
+        }));
+
+        // 2. Normalização das Despesas (type: debit)
+        const despesasRaw = resDespesas.status === "fulfilled" ? resDespesas.value.data : [];
+        const despesasNormalizadas = despesasRaw.map(d => ({
+          ...d,
+          type: 'debit',
+          category: d.categoria || d.tipo || 'Geral',
+          description: d.fonte || d.descricao || 'Saída'
+        }));
+
+        // 3. Unificar e Ordenar por Data (Extrato Analítico)
+        const allTxs = [...receitasNormalizadas, ...despesasNormalizadas].sort(
+          (a, b) => new Date(b.data) - new Date(a.data)
+        );
+
+        setTransactions(allTxs);
+
+        // 4. Cálculos de Totais
+        const totalRevenue = receitasNormalizadas.reduce((acc, r) => acc + parseFloat(r.valor || 0), 0);
+        const totalExpense = despesasNormalizadas.reduce((acc, d) => acc + parseFloat(d.valor || 0), 0);
+        
+        setMonthlySummary({ revenue: totalRevenue, expense: totalExpense });
+        setInvestments(resInvest.status === "fulfilled" ? resInvest.value.data : []);
+        setCards(resCards.status === "fulfilled" ? resCards.value.data : []);
+        setCategories(resCats.status === "fulfilled" ? resCats.value.data : []);
+
+      } catch (err) {
+        console.error("Erro ao carregar dados", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     }
 
-    setLoading(true);
-    try {
-      const config = { headers: { Authorization: `Bearer ${token}` } };
-
-      // Busca dados diretamente das suas rotas configuradas
-      const [resReceitas, resDespesas] = await Promise.all([
-        api.get(`/receitas/${userId}`, config),
-        api.get(`/despesas/${userId}`, config)
-      ]);
-
-      const receitasRaw = resReceitas.data || [];
-      const despesasRaw = resDespesas.data || [];
-
-      // --- NORMALIZAÇÃO PARA A TRANSACTIONS TABLE ---
-      // Aqui garantimos que os nomes das propriedades batam com o que o componente lê
-      
-      const receitasNormalizadas = receitasRaw.map(r => ({
-        id: r.id || r._id,
-        data: r.data,
-        descricao: r.fonte || r.descricao || "Receita", // Mapeia 'fonte' para 'descricao'
-        categoria: r.tipo || "Entrada",
-        valor: parseFloat(r.valor) || 0, // Garante que seja número para evitar NaN
-        type: 'credit'
-      }));
-
-      const despesasNormalizadas = despesasRaw.map(d => ({
-        id: d.id || d._id,
-        data: d.data,
-        descricao: d.descricao || d.fonte || "Despesa",
-        categoria: d.categoria || d.tipo || "Saída",
-        valor: parseFloat(d.valor) || 0,
-        type: 'debit'
-      }));
-
-      // Unificar e ordenar por data decrescente
-      const allTransactions = [...receitasNormalizadas, ...despesasNormalizadas].sort(
-        (a, b) => new Date(b.data) - new Date(a.data)
-      );
-
-      setTransactions(allTransactions);
-
-      // --- CÁLCULO DO RESUMO ---
-      const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.valor, 0);
-      const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.valor, 0);
-      
-      setMonthlySummary({ revenue: totalRev, expense: totalExp });
-
-    } catch (err) {
-      console.error("Erro ao carregar dashboard:", err);
-    } finally {
-      setLoading(false);
-    }
+    loadAll();
+    return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [loadDashboardData]);
+  const patrimony = (monthlySummary.revenue - monthlySummary.expense) + 
+                    investments.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
+
+  const taxEconomy = monthlySummary.revenue > 0 
+    ? ((monthlySummary.revenue - monthlySummary.expense) / monthlySummary.revenue) * 100 
+    : 0;
 
   const logout = () => {
     localStorage.clear();
     window.location.href = "/login";
   };
 
-  if (loading) return <div className="loading-screen">Carregando Dashboard...</div>;
+  if (loading) return <div className="loading">Carregando dados financeiros...</div>;
 
   return (
     <div className="dashboard-root">
@@ -105,18 +121,21 @@ export default function Home() {
           <KPIRow
             totalBalance={monthlySummary.revenue - monthlySummary.expense}
             monthlySummary={monthlySummary}
-            taxEconomy={monthlySummary.revenue > 0 ? ((monthlySummary.revenue - monthlySummary.expense) / monthlySummary.revenue) * 100 : 0}
-            patrimony={monthlySummary.revenue - monthlySummary.expense} 
+            taxEconomy={taxEconomy}
+            patrimony={patrimony}
           />
 
           <section className="charts-row">
             <div className="left-column">
               <UpcomingPayments transactions={transactions} /> 
               <div className="spacer" style={{ height: '20px' }} />
-              {/* Agora passa a lista normalizada e corrigida */}
+              <BudgetProgress budget={categories} /> 
+              <div className="spacer" style={{ height: '20px' }} />
               <TransactionsTable transactions={transactions} />
             </div>
             <div className="right-column">
+              <AssetAllocation assets={investments} /> 
+              <DebtsList debts={cards} />
               <DonutChart transactions={transactions} /> 
             </div>
           </section>
