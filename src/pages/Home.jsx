@@ -8,21 +8,22 @@ import BudgetProgress from "../components/BudgetProgress";
 import AssetAllocation from "../components/AssetAllocation";
 import DebtsList from "../components/DebtsList";
 import DonutChart from "../components/DonutChart";
-import api from "../services/api"; // Certifique-se de ter esse arquivo configurado
+import api from "../services/api"; 
 import "../styles/Dashboard.css";
 
 export default function Home() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
 
-  // Estados iniciais vazios para receber do Back-end
-  const [accounts, setAccounts] = useState({ checking: 0, savings: 0, cash: 0 });
-  const [transactions, setTransactions] = useState([]);
-  const [monthlySummary, setMonthlySummary] = useState({ revenue: 0, expense: 0 });
-  const [budget, setBudget] = useState([]);
-  const [assets, setAssets] = useState([]);
-  const [debts, setDebts] = useState([]);
+  // Estados alinhados com suas rotas
+  const [transactions, setTransactions] = useState([]); // Despesas + Receitas
+  const [investments, setInvestments] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Estados de cálculos (Resumo)
+  const [monthlySummary, setMonthlySummary] = useState({ revenue: 0, expense: 0 });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -35,41 +36,49 @@ export default function Home() {
     async function loadAll() {
       setLoading(true);
       const token = localStorage.getItem("token");
+      const userId = localStorage.getItem("userId");
 
-      // Se não houver token, redireciona para login
-      if (!token) {
+      if (!token || !userId) {
         window.location.href = "/login";
         return;
       }
 
       try {
-        // Configuramos o Header de Autorização para as chamadas
-        const config = {
-          headers: { Authorization: `Bearer ${token}` }
-        };
+        const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        // Chamadas reais para o seu Back-end Node.js
-        const [accRes, txRes, summaryRes, budgetRes, assetsRes, debtsRes] = await Promise.allSettled([
-          api.get("/accounts", config),
-          api.get("/transactions?limit=200", config),
-          api.get("/summary/month", config),
-          api.get("/budget", config),
-          api.get("/assets", config),
-          api.get("/debts", config),
+        // 1. Chamadas diretas para suas rotas existentes
+        const [resReceitas, resDespesas, resInvest, resCards, resCats] = await Promise.allSettled([
+          api.get(`/receitas/${userId}`, config),
+          api.get(`/despesas/${userId}`, config),
+          api.get(`/investimentos/${userId}`, config), // Se houver GET de investimento
+          api.get(`/cartoes/${userId}`, config),
+          api.get(`/categorias/${userId}`, config),
         ]);
 
         if (!mounted) return;
 
-        // Atribuição dinâmica: Se a API falhar, mantém os valores zerados em vez de crashar
-        if (accRes.status === "fulfilled") setAccounts(accRes.value.data);
-        if (txRes.status === "fulfilled") setTransactions(txRes.value.data);
-        if (summaryRes.status === "fulfilled") setMonthlySummary(summaryRes.value.data);
-        if (budgetRes.status === "fulfilled") setBudget(budgetRes.value.data);
-        if (assetsRes.status === "fulfilled") setAssets(assetsRes.value.data);
-        if (debtsRes.status === "fulfilled") setDebts(debtsRes.value.data);
+        // 2. Extração dos dados
+        const receitas = resReceitas.status === "fulfilled" ? resReceitas.value.data : [];
+        const despesas = resDespesas.status === "fulfilled" ? resDespesas.value.data : [];
+        const investData = resInvest.status === "fulfilled" ? resInvest.value.data : [];
+        const cardData = resCards.status === "fulfilled" ? resCards.value.data : [];
+        const catData = resCats.status === "fulfilled" ? resCats.value.data : [];
+
+        // 3. Unificar transações para a tabela (ordenado por data)
+        const allTxs = [...receitas, ...despesas].sort((a, b) => new Date(b.data) - new Date(a.data));
+        setTransactions(allTxs);
+
+        // 4. Calcular Resumo Mensal (Soma manual das listas)
+        const totalRevenue = receitas.reduce((acc, r) => acc + parseFloat(r.valor || 0), 0);
+        const totalExpense = despesas.reduce((acc, d) => acc + parseFloat(d.valor || 0), 0);
+        
+        setMonthlySummary({ revenue: totalRevenue, expense: totalExpense });
+        setInvestments(investData);
+        setCards(cardData);
+        setCategories(catData);
 
       } catch (err) {
-        console.error("Erro crítico ao carregar dados", err);
+        console.error("Erro ao carregar dados", err);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -79,20 +88,15 @@ export default function Home() {
     return () => { mounted = false; };
   }, []);
 
-  // --- CÁLCULOS DERIVADOS (Baseados nos dados reais do Back-end) ---
-  const totalBalance = (accounts.checking || 0) + (accounts.savings || 0) + (accounts.cash || 0);
+  // --- CÁLCULOS PARA OS COMPONENTES ---
+  
+  // Patrimônio = (Receitas - Despesas) + Investimentos
+  const patrimony = (monthlySummary.revenue - monthlySummary.expense) + 
+                    investments.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
 
-  const taxEconomy = (() => {
-    const { revenue = 0, expense = 0 } = monthlySummary;
-    if (revenue === 0) return 0;
-    return ((revenue - expense) / revenue) * 100;
-  })();
-
-  const patrimony = (() => {
-    const assetsTotal = assets?.reduce((s, a) => s + (a.value || 0), 0) || 0;
-    const debtsTotal = debts?.reduce((s, d) => s + (d.balance || 0), 0) || 0;
-    return assetsTotal - debtsTotal;
-  })();
+  const taxEconomy = monthlySummary.revenue > 0 
+    ? ((monthlySummary.revenue - monthlySummary.expense) / monthlySummary.revenue) * 100 
+    : 0;
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -100,9 +104,7 @@ export default function Home() {
     window.location.href = "/login";
   };
 
-  if (loading) {
-    return <div className="loading-screen">Carregando Dashboard...</div>;
-  }
+  if (loading) return <div className="loading">Carregando dados financeiros...</div>;
 
   return (
     <div className="dashboard-root">
@@ -112,7 +114,7 @@ export default function Home() {
 
         <main className="content">
           <KPIRow
-            totalBalance={totalBalance}
+            totalBalance={monthlySummary.revenue - monthlySummary.expense} // Saldo Líquido
             monthlySummary={monthlySummary}
             taxEconomy={taxEconomy}
             patrimony={patrimony}
@@ -121,14 +123,15 @@ export default function Home() {
           <section className="charts-row">
             <div className="left-column">
               <UpcomingPayments transactions={transactions} /> 
-              <div className="spacer" />
-              <BudgetProgress budget={budget} />
-              <div className="spacer" />
+              <div className="spacer" style={{ height: '20px' }} />
+              {/* Mapeando investimentos para BudgetProgress ou similar */}
+              <BudgetProgress budget={categories} /> 
+              <div className="spacer" style={{ height: '20px' }} />
               <TransactionsTable transactions={transactions} />
             </div>
             <div className="right-column">
-              <AssetAllocation assets={assets} /> 
-              <DebtsList debts={debts} />
+              <AssetAllocation assets={investments} /> 
+              <DebtsList debts={cards} /> {/* Mostrando faturas de cartões como débitos */}
               <DonutChart transactions={transactions} /> 
             </div>
           </section>
