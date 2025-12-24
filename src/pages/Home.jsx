@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import KPIRow from "../components/KPIRow";
@@ -8,16 +8,14 @@ import BudgetProgress from "../components/BudgetProgress";
 import AssetAllocation from "../components/AssetAllocation";
 import DebtsList from "../components/DebtsList";
 import DonutChart from "../components/DonutChart";
-import api from "../services/api"; 
+import api, { ReceitaService, DespesaService } from "../services/api"; 
 import "../styles/Dashboard.css";
+import moment from "moment";
 
 export default function Home() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
-  const [transactions, setTransactions] = useState([]); 
-  const [investments, setInvestments] = useState([]);
-  const [cards, setCards] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthlySummary, setMonthlySummary] = useState({ revenue: 0, expense: 0 });
 
@@ -26,90 +24,75 @@ export default function Home() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadAll() {
-      setLoading(true);
-      const token = localStorage.getItem("token");
-      const userId = localStorage.getItem("userId");
-
-      if (!token || !userId) {
-        window.location.href = "/login";
-        return;
-      }
-
-      try {
-        const config = { headers: { Authorization: `Bearer ${token}` } };
-
-        const [resReceitas, resDespesas, resInvest, resCards, resCats] = await Promise.allSettled([
-          api.get(`/receitas/${userId}`, config),
-          api.get(`/despesas/${userId}`, config),
-          api.get(`/investimentos/${userId}`, config), 
-          api.get(`/cartoes/${userId}`, config),
-          api.get(`/categorias/${userId}`, config),
-        ]);
-
-        if (!mounted) return;
-
-        // 1. Normalização das Receitas (type: credit)
-        const receitasRaw = resReceitas.status === "fulfilled" ? resReceitas.value.data : [];
-        const receitasNormalizadas = receitasRaw.map(r => ({
-          ...r,
-          type: 'credit',
-          category: r.tipo || 'Receita',
-          description: r.fonte || r.descricao || 'Entrada'
-        }));
-
-        // 2. Normalização das Despesas (type: debit)
-        const despesasRaw = resDespesas.status === "fulfilled" ? resDespesas.value.data : [];
-        const despesasNormalizadas = despesasRaw.map(d => ({
-          ...d,
-          type: 'debit',
-          category: d.categoria || d.tipo || 'Geral',
-          description: d.fonte || d.descricao || 'Saída'
-        }));
-
-        // 3. Unificar e Ordenar por Data (Extrato Analítico)
-        const allTxs = [...receitasNormalizadas, ...despesasNormalizadas].sort(
-          (a, b) => new Date(b.data) - new Date(a.data)
-        );
-
-        setTransactions(allTxs);
-
-        // 4. Cálculos de Totais
-        const totalRevenue = receitasNormalizadas.reduce((acc, r) => acc + parseFloat(r.valor || 0), 0);
-        const totalExpense = despesasNormalizadas.reduce((acc, d) => acc + parseFloat(d.valor || 0), 0);
-        
-        setMonthlySummary({ revenue: totalRevenue, expense: totalExpense });
-        setInvestments(resInvest.status === "fulfilled" ? resInvest.value.data : []);
-        setCards(resCards.status === "fulfilled" ? resCards.value.data : []);
-        setCategories(resCats.status === "fulfilled" ? resCats.value.data : []);
-
-      } catch (err) {
-        console.error("Erro ao carregar dados", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
+  const loadDashboardData = useCallback(async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) {
+      window.location.href = "/login";
+      return;
     }
 
-    loadAll();
-    return () => { mounted = false; };
+    setLoading(true);
+    try {
+      // 1. Busca dados usando os serviços que você já validou
+      const [resReceitas, resDespesas] = await Promise.all([
+        api.get(`/receitas/${userId}`),
+        api.get(`/despesas/${userId}`)
+      ]);
+
+      const receitasRaw = resReceitas.data || [];
+      const despesasRaw = resDespesas.data || [];
+
+      // 2. Normalização (Crucial para evitar R$ NaN e campos vazios)
+      const receitasNormalizadas = receitasRaw.map(r => ({
+        id: r.id || r._id,
+        data: r.data,
+        // Alinhado com seu backend: Receitas usam 'fonte'
+        description: r.fonte || r.descricao || "Receita",
+        category: r.tipo || "Entrada",
+        // Converte para número garantindo que não seja NaN
+        amount: parseFloat(r.valor) || 0,
+        type: 'credit'
+      }));
+
+      const despesasNormalizadas = despesasRaw.map(d => ({
+        id: d.id || d._id,
+        data: d.data,
+        // Alinhado com seu backend: Despesas usam 'categoria' ou 'fonte'
+        description: d.descricao || d.tipo || "Despesa",
+        category: d.categoria || "Saída",
+        amount: parseFloat(d.valor) || 0,
+        type: 'debit'
+      }));
+
+      // 3. Unificar para o Extrato Analítico
+      const mixedTransactions = [...receitasNormalizadas, ...despesasNormalizadas]
+        .sort((a, b) => new Date(b.data) - new Date(a.data));
+
+      setTransactions(mixedTransactions);
+
+      // 4. Totais para os Cards (KPIs)
+      const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.amount, 0);
+      const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.amount, 0);
+      
+      setMonthlySummary({ revenue: totalRev, expense: totalExp });
+
+    } catch (err) {
+      console.error("Erro ao carregar dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const patrimony = (monthlySummary.revenue - monthlySummary.expense) + 
-                    investments.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
-
-  const taxEconomy = monthlySummary.revenue > 0 
-    ? ((monthlySummary.revenue - monthlySummary.expense) / monthlySummary.revenue) * 100 
-    : 0;
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   const logout = () => {
     localStorage.clear();
     window.location.href = "/login";
   };
 
-  if (loading) return <div className="loading">Carregando dados financeiros...</div>;
+  if (loading) return <div className="loading-screen">Carregando Dashboard...</div>;
 
   return (
     <div className="dashboard-root">
@@ -121,21 +104,17 @@ export default function Home() {
           <KPIRow
             totalBalance={monthlySummary.revenue - monthlySummary.expense}
             monthlySummary={monthlySummary}
-            taxEconomy={taxEconomy}
-            patrimony={patrimony}
+            taxEconomy={monthlySummary.revenue > 0 ? ((monthlySummary.revenue - monthlySummary.expense) / monthlySummary.revenue) * 100 : 0}
+            patrimony={monthlySummary.revenue - monthlySummary.expense} 
           />
 
           <section className="charts-row">
             <div className="left-column">
               <UpcomingPayments transactions={transactions} /> 
               <div className="spacer" style={{ height: '20px' }} />
-              <BudgetProgress budget={categories} /> 
-              <div className="spacer" style={{ height: '20px' }} />
               <TransactionsTable transactions={transactions} />
             </div>
             <div className="right-column">
-              <AssetAllocation assets={investments} /> 
-              <DebtsList debts={cards} />
               <DonutChart transactions={transactions} /> 
             </div>
           </section>
