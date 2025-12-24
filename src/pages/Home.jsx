@@ -14,15 +14,11 @@ import "../styles/Dashboard.css";
 export default function Home() {
   const [collapsed, setCollapsed] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem("theme") || "dark");
-
-  // Estados alinhados com suas rotas
-  const [transactions, setTransactions] = useState([]); // Despesas + Receitas
+  const [transactions, setTransactions] = useState([]); 
   const [investments, setInvestments] = useState([]);
   const [cards, setCards] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Estados de cálculos (Resumo)
   const [monthlySummary, setMonthlySummary] = useState({ revenue: 0, expense: 0 });
 
   useEffect(() => {
@@ -46,36 +42,49 @@ export default function Home() {
       try {
         const config = { headers: { Authorization: `Bearer ${token}` } };
 
-        // 1. Chamadas diretas para suas rotas existentes
         const [resReceitas, resDespesas, resInvest, resCards, resCats] = await Promise.allSettled([
           api.get(`/receitas/${userId}`, config),
           api.get(`/despesas/${userId}`, config),
-          api.get(`/investimentos/${userId}`, config), // Se houver GET de investimento
+          api.get(`/investimentos/${userId}`, config), 
           api.get(`/cartoes/${userId}`, config),
           api.get(`/categorias/${userId}`, config),
         ]);
 
         if (!mounted) return;
 
-        // 2. Extração dos dados
-        const receitas = resReceitas.status === "fulfilled" ? resReceitas.value.data : [];
-        const despesas = resDespesas.status === "fulfilled" ? resDespesas.value.data : [];
-        const investData = resInvest.status === "fulfilled" ? resInvest.value.data : [];
-        const cardData = resCards.status === "fulfilled" ? resCards.value.data : [];
-        const catData = resCats.status === "fulfilled" ? resCats.value.data : [];
+        // 1. Normalização das Receitas (type: credit)
+        const receitasRaw = resReceitas.status === "fulfilled" ? resReceitas.value.data : [];
+        const receitasNormalizadas = receitasRaw.map(r => ({
+          ...r,
+          type: 'credit',
+          category: r.tipo || 'Receita',
+          description: r.fonte || r.descricao || 'Entrada'
+        }));
 
-        // 3. Unificar transações para a tabela (ordenado por data)
-        const allTxs = [...receitas, ...despesas].sort((a, b) => new Date(b.data) - new Date(a.data));
+        // 2. Normalização das Despesas (type: debit)
+        const despesasRaw = resDespesas.status === "fulfilled" ? resDespesas.value.data : [];
+        const despesasNormalizadas = despesasRaw.map(d => ({
+          ...d,
+          type: 'debit',
+          category: d.categoria || d.tipo || 'Geral',
+          description: d.fonte || d.descricao || 'Saída'
+        }));
+
+        // 3. Unificar e Ordenar por Data (Extrato Analítico)
+        const allTxs = [...receitasNormalizadas, ...despesasNormalizadas].sort(
+          (a, b) => new Date(b.data) - new Date(a.data)
+        );
+
         setTransactions(allTxs);
 
-        // 4. Calcular Resumo Mensal (Soma manual das listas)
-        const totalRevenue = receitas.reduce((acc, r) => acc + parseFloat(r.valor || 0), 0);
-        const totalExpense = despesas.reduce((acc, d) => acc + parseFloat(d.valor || 0), 0);
+        // 4. Cálculos de Totais
+        const totalRevenue = receitasNormalizadas.reduce((acc, r) => acc + parseFloat(r.valor || 0), 0);
+        const totalExpense = despesasNormalizadas.reduce((acc, d) => acc + parseFloat(d.valor || 0), 0);
         
         setMonthlySummary({ revenue: totalRevenue, expense: totalExpense });
-        setInvestments(investData);
-        setCards(cardData);
-        setCategories(catData);
+        setInvestments(resInvest.status === "fulfilled" ? resInvest.value.data : []);
+        setCards(resCards.status === "fulfilled" ? resCards.value.data : []);
+        setCategories(resCats.status === "fulfilled" ? resCats.value.data : []);
 
       } catch (err) {
         console.error("Erro ao carregar dados", err);
@@ -88,9 +97,6 @@ export default function Home() {
     return () => { mounted = false; };
   }, []);
 
-  // --- CÁLCULOS PARA OS COMPONENTES ---
-  
-  // Patrimônio = (Receitas - Despesas) + Investimentos
   const patrimony = (monthlySummary.revenue - monthlySummary.expense) + 
                     investments.reduce((acc, i) => acc + parseFloat(i.valor || 0), 0);
 
@@ -99,8 +105,7 @@ export default function Home() {
     : 0;
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("userId");
+    localStorage.clear();
     window.location.href = "/login";
   };
 
@@ -114,7 +119,7 @@ export default function Home() {
 
         <main className="content">
           <KPIRow
-            totalBalance={monthlySummary.revenue - monthlySummary.expense} // Saldo Líquido
+            totalBalance={monthlySummary.revenue - monthlySummary.expense}
             monthlySummary={monthlySummary}
             taxEconomy={taxEconomy}
             patrimony={patrimony}
@@ -124,14 +129,13 @@ export default function Home() {
             <div className="left-column">
               <UpcomingPayments transactions={transactions} /> 
               <div className="spacer" style={{ height: '20px' }} />
-              {/* Mapeando investimentos para BudgetProgress ou similar */}
               <BudgetProgress budget={categories} /> 
               <div className="spacer" style={{ height: '20px' }} />
               <TransactionsTable transactions={transactions} />
             </div>
             <div className="right-column">
               <AssetAllocation assets={investments} /> 
-              <DebtsList debts={cards} /> {/* Mostrando faturas de cartões como débitos */}
+              <DebtsList debts={cards} />
               <DonutChart transactions={transactions} /> 
             </div>
           </section>
