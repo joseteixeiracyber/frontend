@@ -21,65 +21,68 @@ export default function Home() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
- const loadDashboardData = useCallback(async () => {
-  const userId = localStorage.getItem("userId");
-  const token = localStorage.getItem("token");
+  const loadDashboardData = useCallback(async () => {
+    const userId = localStorage.getItem("userId");
+    const token = localStorage.getItem("token");
 
-  if (!userId || !token) {
-    window.location.href = "/login";
-    return;
-  }
+    if (!userId || !token) {
+      window.location.href = "/login";
+      return;
+    }
 
-  setLoading(true);
-  try {
-    const config = { headers: { Authorization: `Bearer ${token}` } };
+    setLoading(true);
+    try {
+      const config = { headers: { Authorization: `Bearer ${token}` } };
 
-    const [resReceitas, resDespesas] = await Promise.all([
-      api.get(`/receitas/${userId}`, config),
-      api.get(`/despesas/${userId}`, config)
-    ]);
+      // Busca dados diretamente das suas rotas configuradas
+      const [resReceitas, resDespesas] = await Promise.all([
+        api.get(`/receitas/${userId}`, config),
+        api.get(`/despesas/${userId}`, config)
+      ]);
 
-    // LOG PARA DEPURAÇÃO: Veja no console do Chrome se os dados estão chegando
-    console.log("Receitas do BD:", resReceitas.data);
-    console.log("Despesas do BD:", resDespesas.data);
+      const receitasRaw = resReceitas.data || [];
+      const despesasRaw = resDespesas.data || [];
 
-    // Normalização das Receitas
-    const receitasNormalizadas = (resReceitas.data || []).map(r => ({
-      id: r.id || r._id,
-      data: r.data,
-      descricao: r.fonte || r.descricao || "Receita", 
-      categoria: r.tipo || "Entrada",
-      valor: Number(r.valor) || 0, // Number() é mais seguro que parseFloat para strings limpas
-      type: 'credit'
-    }));
+      // --- NORMALIZAÇÃO PARA A TRANSACTIONS TABLE ---
+      // Aqui garantimos que os nomes das propriedades batam com o que o componente lê
+      
+      const receitasNormalizadas = receitasRaw.map(r => ({
+        id: r.id || r._id,
+        data: r.data,
+        descricao: r.fonte || r.descricao || "Receita", // Mapeia 'fonte' para 'descricao'
+        categoria: r.tipo || "Entrada",
+        valor: parseFloat(r.valor) || 0, // Garante que seja número para evitar NaN
+        type: 'credit'
+      }));
 
-    // Normalização das Despesas
-    const despesasNormalizadas = (resDespesas.data || []).map(d => ({
-      id: d.id || d._id,
-      data: d.data,
-      descricao: d.descricao || d.fonte || "Despesa",
-      categoria: d.categoria || d.tipo || "Saída",
-      valor: Number(d.valor) || 0,
-      type: 'debit'
-    }));
+      const despesasNormalizadas = despesasRaw.map(d => ({
+        id: d.id || d._id,
+        data: d.data,
+        descricao: d.descricao || d.fonte || "Despesa",
+        categoria: d.categoria || d.tipo || "Saída",
+        valor: parseFloat(d.valor) || 0,
+        type: 'debit'
+      }));
 
-    const allTransactions = [...receitasNormalizadas, ...despesasNormalizadas].sort(
-      (a, b) => new Date(b.data) - new Date(a.data)
-    );
+      // Unificar e ordenar por data decrescente
+      const allTransactions = [...receitasNormalizadas, ...despesasNormalizadas].sort(
+        (a, b) => new Date(b.data) - new Date(a.data)
+      );
 
-    setTransactions(allTransactions);
+      setTransactions(allTransactions);
 
-    const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.valor, 0);
-    const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.valor, 0);
-    
-    setMonthlySummary({ revenue: totalRev, expense: totalExp });
+      // --- CÁLCULO DO RESUMO ---
+      const totalRev = receitasNormalizadas.reduce((acc, r) => acc + r.valor, 0);
+      const totalExp = despesasNormalizadas.reduce((acc, d) => acc + d.valor, 0);
+      
+      setMonthlySummary({ revenue: totalRev, expense: totalExp });
 
-  } catch (err) {
-    console.error("Erro crítico no carregamento:", err);
-  } finally {
-    setLoading(false);
-  }
-}, []);
+    } catch (err) {
+      console.error("Erro ao carregar dashboard:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadDashboardData();
